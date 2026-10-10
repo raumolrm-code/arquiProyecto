@@ -1,0 +1,26 @@
+# ==============================================================================
+# .gitignore para Proyecto de Arquitectura del Computador - Microcontroladores
+# ==============================================================================
+
+# Archivos de sistema operativo
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Archivos temporales de compilación Arduino / C++
+*.hex
+*.elf
+*.bin
+build/
+*.o
+*.d
+*.cache
+
+# Archivos de configuración de IDEs y editores locales
+.vscode/
+.idea/
+*.swp
+*~
+*.bak
