@@ -1,6 +1,6 @@
-# ==============================================================================
-# .gitignore para Proyecto de Arquitectura del Computador - Microcontroladores
-# ==============================================================================
+
+# .gitignore para Proyecto de Arquitectura del Computador
+
 
 # Archivos de sistema operativo
 Thumbs.db
