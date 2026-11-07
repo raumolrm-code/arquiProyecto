@@ -8,8 +8,10 @@ Curso: Arquitectura del Computador
 ---
 
 ##  Integrantes del Equipo
-* **Raúl Molina**
-* **Daniel Zepeda**
+* **Raúl Molina - 1213124**
+* **Daniel Zepeda - 1265824**
+* **Javier Amezquita - 1081024**
+* **Andrea Miranda - 1065824**
 
 ---
 
