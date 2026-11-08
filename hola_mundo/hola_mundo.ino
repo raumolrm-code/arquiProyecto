@@ -90,22 +90,24 @@ char teclas[FILAS][COLUMNAS] = {
 byte pinesFilas[FILAS] = {2, 3, 4};
 byte pinesColumnas[COLUMNAS] = {5, 6, 7};
 Keypad teclado = Keypad(makeKeymap(teclas), pinesFilas, pinesColumnas,
-                        FILAS, COLUMNAS);
+                        FILAS, COLUMNAS);             // Teclado fisico 3x3 ( Caracteres 1-9)
 
-MFRC522 lectorRFID(PIN_RFID_SS, MFRC522::UNUSED_PIN);
+MFRC522 lectorRFID(PIN_RFID_SS, MFRC522::UNUSED_PIN); // Lector RFID (el de la tarjeta)
 ThreeWire rtcWire(PIN_RTC_IO, PIN_RTC_CLK, PIN_RTC_CE);
-RtcDS1302<ThreeWire> rtc(rtcWire);
-LiquidCrystal_I2C lcd(LCD_DIRECCION, 16, 2);
-DHT dht(PIN_DHT, TIPO_DHT);
-Servo servo;
+RtcDS1302<ThreeWire> rtc(rtcWire);  // Reloj
+LiquidCrystal_I2C lcd(LCD_DIRECCION, 16, 2);  // Pantalla LCD 16x2
+DHT dht(PIN_DHT, TIPO_DHT);  // Sensor de temperatura y humedad 
+Servo servo;  // Servo para abrir/cerrar compuerta
 
 // ---------- Configuracion persistida en EEPROM ----------
-enum Modo : uint8_t { MANUAL = 0, AUTOMATICO = 1 };
-const uint32_t FIRMA_EEPROM = 0xA7152026UL;
+enum Modo : uint8_t { 
+  MANUAL = 0,
+  AUTOMATICO = 1 };
+const uint32_t FIRMA_EEPROM = 0xA7152026UL;   // Para detectar EEPROM no inicializada o corrupta.
 
 struct Configuracion {
   uint32_t firma;
-  char pin[5];                 // PIN de 4 digitos 1-9 + terminador NUL
+  char pin[5];                  // PIN de 4 digitos 1-9 + terminador NUL
   uint8_t modo;
   uint8_t hora[2];
   uint8_t minuto[2];
@@ -118,21 +120,22 @@ struct Configuracion {
 Configuracion config;
 
 enum Estado : uint8_t {
-  LISTO,
-  ESPERANDO_PIN,
-  ENROLANDO_RFID,
-  DISPENSANDO,
-  CERRANDO
+  LISTO,            // Esperando accion
+  ESPERANDO_PIN,    // Esperando cuatro numeros del PIN 
+  ENROLANDO_RFID,   // esperando una tarjeta para registrar
+  DISPENSANDO,      // Dispensando comida
+  CERRANDO          // Cerrando compuerta
 };
 Estado estado = LISTO;
 
-bool rtcValido = false;
+// --------- Variables de estado ----------
+bool rtcValido = false; 
 float temperatura = NAN;
 float humedad = NAN;
 
-char pinTecleado[5] = {0};
-uint8_t cantidadTecleada = 0;
-uint8_t intentosFallidos = 0;
+char pinTecleado[5] = {0};    // Almacena el PIN ingresado por teclado fisico
+uint8_t cantidadTecleada = 0; // Cantidad de digitos ingresados por teclado fisico
+uint8_t intentosFallidos = 0; // Cantidad de intentos fallidos
 const char* origenPendiente = "";
 const char* origenDispensacion = "";
 unsigned long inicioEstado = 0;
@@ -144,22 +147,24 @@ unsigned long ultimoRFID = 0;
 unsigned long ultimoBoton = 0;
 bool botonAnterior = HIGH;
 
-char comandoBT[72];
-uint8_t posBT = 0;
-char aviso1[17] = "";
-char aviso2[17] = "";
-unsigned long avisoHasta = 0;
+// --------- Variables de comunicacion Bluetooth ----------
+char comandoBT[72]; // Texto Comando recibido por Bluetooth (terminado en '\n')
+uint8_t posBT = 0;  // Posición actual en el buffer de comando
+char aviso1[17] = ""; // Mensaje que se muestra en la primera linea del LCD
+char aviso2[17] = ""; // Mensaje que se muestra en la segunda linea del LCD
+unsigned long avisoHasta = 0; // Tiempo hasta el cual se muestra el aviso
 
 // ---------- EEPROM ----------
 uint16_t checksumConfig() {
   uint16_t suma = 0xA5A5;
-  const uint8_t* datos = reinterpret_cast<const uint8_t*>(&config);
+  const uint8_t* datos = reinterpret_cast<const uint8_t*>(&config);   // Reinterpreta el config como un puntero de u8
   for (size_t i = 0; i < offsetof(Configuracion, checksum); ++i) {
-    suma = static_cast<uint16_t>((suma ^ datos[i]) * 31U);
+    suma = static_cast<uint16_t>((suma ^ datos[i]) * 31U);            // Mezcla con un primo para difundir los bits
   }
   return suma;
 }
 
+// --------- Validacion de PIN ----------
 bool pinPermitido(const char* p) {
   if (!p || strlen(p) != 4) return false;
   for (uint8_t i = 0; i < 4; ++i) {
@@ -168,15 +173,17 @@ bool pinPermitido(const char* p) {
   return true;
 }
 
+// --------- Configuracion ----------
 void guardarConfig() {
   config.checksum = checksumConfig();
   EEPROM.put(0, config);
 }
 
+// ---------- Valores iniciales de la configuracion ----------
 void valoresIniciales() {
-  memset(&config, 0, sizeof(config));
+  memset(&config, 0, sizeof(config));   // Inicializa toda la estructura a cero
   config.firma = FIRMA_EEPROM;
-  strcpy(config.pin, "1234"); // Cambiarlo desde Bluetooth en la configuracion inicial.
+  strcpy(config.pin, "1234");           // Cambiarlo desde Bluetooth en la configuracion inicial.
   config.modo = MANUAL;
   config.hora[0] = 8;
   config.minuto[0] = 0;
@@ -186,12 +193,11 @@ void valoresIniciales() {
   guardarConfig();
 }
 
+// --------- Cargar configuracion desde EEPROM ----------
 void cargarConfig() {
   EEPROM.get(0, config);
-  if (config.firma != FIRMA_EEPROM ||
-      config.checksum != checksumConfig() ||
-      config.pin[4] != '\0' ||
-      !pinPermitido(config.pin) ||
+  if (config.firma != FIRMA_EEPROM ||config.checksum != checksumConfig() ||
+      config.pin[4] != '\0' || !pinPermitido(config.pin) ||
       config.modo > AUTOMATICO ||
       config.hora[0] > 23 || config.hora[1] > 23 ||
       config.minuto[0] > 59 || config.minuto[1] > 59 ||
@@ -218,6 +224,7 @@ bool bloqueado() {
   return static_cast<int32_t>(bloqueoHasta - millis()) > 0;
 }
 
+// --------- Escribe en una linea del LCD ----------
 void lineaLCD(uint8_t fila, const char* texto) {
   lcd.setCursor(0, fila);
   lcd.print(F("                "));
@@ -290,6 +297,7 @@ void actualizarLCD() {
   lcd.print('%');
 }
 
+// --------- Lee temperatura y humedad ----------
 void leerSensor() {
   if (millis() - ultimoDHT < 2500UL) return;
   ultimoDHT = millis();
@@ -301,7 +309,7 @@ void leerSensor() {
   }
 }
 
-// ---------- Actuador ----------
+// ---------- Iniciar dispensacion ----------
 void iniciarDispensacion(const char* origen) {
   if (estado != LISTO) {
     Serial.println(F("ERROR,BUSY"));
@@ -316,13 +324,15 @@ void iniciarDispensacion(const char* origen) {
   Serial.println(origenDispensacion);
 }
 
+// ---------- Actualizar dispensador ----------
 void actualizarDispensador() {
   const unsigned long ahora = millis();
+  // Si ha pasado el tiempo de apertura, se cierra
   if (estado == DISPENSANDO && ahora - inicioEstado >= config.aperturaMs) {
     servo.write(ANGULO_CERRADO);
     estado = CERRANDO;
     inicioEstado = ahora;
-  } else if (estado == CERRANDO && ahora - inicioEstado >= TIEMPO_CIERRE_MS) {
+  } else if (estado == CERRANDO && ahora - inicioEstado >= TIEMPO_CIERRE_MS) {  // Si ha pasado el tiempo de cierre, se libera el servo y vuelve a LISTO
     servo.detach();
     estado = LISTO;
     Serial.print(F("EVENT,FEED_END,"));
@@ -347,6 +357,7 @@ void solicitarPin(const char* origen) {
   Serial.println(origenPendiente);
 }
 
+// --------- Manejo de error de PIN ----------
 void errorPin() {
   ++intentosFallidos;
   estado = LISTO;
@@ -359,8 +370,10 @@ void errorPin() {
   }
 }
 
+// ---------- Revisar teclado ----------
 void revisarTeclado() {
   if (estado != ESPERANDO_PIN) return;
+  // Si el usuario no teclea nada en TIEMPO_PIN_MS, se cancela la operacion.
   if (millis() - inicioEstado >= TIEMPO_PIN_MS) {
     estado = LISTO;
     Serial.println(F("EVENT,PIN_TIMEOUT"));
@@ -371,6 +384,7 @@ void revisarTeclado() {
   char tecla = teclado.getKey();
   if (tecla < '1' || tecla > '9') return;
   if (cantidadTecleada >= 4) return;
+  // Almacena el PIN ingresado por teclado fisico y agrega terminador 
   pinTecleado[cantidadTecleada++] = tecla;
   pinTecleado[cantidadTecleada] = '\0';
   if (cantidadTecleada == 4) {
@@ -384,32 +398,32 @@ void revisarTeclado() {
   }
 }
 
-// ---------- RFID ----------
+// ---------- Sensor de la tarjeta ---------
 void revisarRFID() {
   if (estado != ENROLANDO_RFID &&
       !(estado == LISTO && config.modo == MANUAL)) return;
   if (millis() - ultimoRFID < 100UL) return;
   ultimoRFID = millis();
-  if (!lectorRFID.PICC_IsNewCardPresent()) return;
-  if (!lectorRFID.PICC_ReadCardSerial()) return;
+  if (!lectorRFID.PICC_IsNewCardPresent()) return;        // Detecta si es una tarjeta nueva
+  if (!lectorRFID.PICC_ReadCardSerial()) return;          // No puede leer el UID de la tarjeta 
 
-  const uint8_t tam = lectorRFID.uid.size;
-  if (estado == ENROLANDO_RFID) {
+  const uint8_t tam = lectorRFID.uid.size;                // Guarda el tamaño del UID de la tarjeta leida
+  if (estado == ENROLANDO_RFID) {                         // Si espera registrar una tarjeta
     if (tam > 0 && tam <= sizeof(config.uid)) {
       config.uidTam = tam;
-      memset(config.uid, 0, sizeof(config.uid));
-      memcpy(config.uid, lectorRFID.uid.uidByte, tam);
+      memset(config.uid, 0, sizeof(config.uid));          // Limpia el UID anterior
+      memcpy(config.uid, lectorRFID.uid.uidByte, tam);    // Copia el nuevo UID
       guardarConfig();
       estado = LISTO;
       Serial.println(F("EVENT,CARD_ENROLLED"));
-      mostrarAviso("RFID registrado", "Correctamente", 2000);
+      mostrarAviso("RFID registrado", "Correctamente", 2000); // Muestra mensaje de exito en el LCD
     } else {
       Serial.println(F("ERROR,UID_SIZE"));
     }
-  } else {
+  } else {                                                // Si no espera ninguan nueva tarjeta
     bool autorizada = config.uidTam == tam && tam > 0 &&
-                       memcmp(config.uid, lectorRFID.uid.uidByte, tam) == 0;
-    if (autorizada) solicitarPin("RFID");
+                       memcmp(config.uid, lectorRFID.uid.uidByte, tam) == 0;  // Revisa que la tarjeta leida sea la autorizada
+    if (autorizada) solicitarPin("RFID");                 // Si es tarjeta autorizadam solicita el pin
     else {
       Serial.println(F("EVENT,CARD_DENIED"));
       mostrarAviso("RFID no valido", "Acceso denegado", 1200);
@@ -419,7 +433,8 @@ void revisarRFID() {
   lectorRFID.PCD_StopCrypto1();
 }
 
-void revisarBoton() {
+// --------- Boton fisico ----------
+void revisarBoton() {                                     // Revisa si el boton fisico fue presionado 
   bool actual = digitalRead(PIN_BOTON);
   if (botonAnterior == HIGH && actual == LOW &&
       millis() - ultimoBoton > 250UL) {
@@ -431,10 +446,11 @@ void revisarBoton() {
 
 // ---------- Reloj / alimentacion automatica ----------
 void revisarHorarios() {
-  if (estado != LISTO || config.modo != AUTOMATICO || !rtcValido) return;
+  if (estado != LISTO || config.modo != AUTOMATICO || !rtcValido) return; // Revisa que sea modo automatico y reloj valido
   if (millis() - ultimoRTC < 500UL) return;
   ultimoRTC = millis();
 
+  // Obtiene la fecha y hora del reloj
   RtcDateTime t = rtc.GetDateTime();
   if (!t.IsValid()) {
     rtcValido = false;
@@ -455,7 +471,7 @@ void revisarHorarios() {
 }
 
 // ---------- Protocolo Bluetooth ----------
-bool leerNumero(const char* texto, uint16_t& resultado) {
+bool leerNumero(const char* texto, uint16_t& resultado) {                   // Convierte un texto a un uint16_t
   if (!texto || !*texto) return false;
   unsigned long valor = 0;
   for (const char* p = texto; *p; ++p) {
@@ -467,10 +483,12 @@ bool leerNumero(const char* texto, uint16_t& resultado) {
   return true;
 }
 
+// --------- Extraer un numero de la cadena strtok ----------
 bool extraerNumero(uint16_t& n) {
   return leerNumero(strtok(NULL, ","), n);
 }
 
+// --------- Toma un texto y lo compara con el pin ----------
 bool pinCorrecto(const char* texto) {
   if (bloqueado()) {
     Serial.println(F("ERROR,PIN_LOCKED"));
@@ -530,6 +548,7 @@ void enviarEstado() {
   Serial.println(F("STATUS,END"));
 }
 
+// --------- Procesar comando recibido como texto ----------
 void procesarComando(char* linea) {
   char* accion = strtok(linea, ",");
   if (!accion) return;
