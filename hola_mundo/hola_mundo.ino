@@ -1,3 +1,4 @@
+
 /*
   ALIMENTADOR DE MASCOTAS CON SEGURIDAD - Arduino UNO R3
   Arquitectura del Computador (2S 2026)
